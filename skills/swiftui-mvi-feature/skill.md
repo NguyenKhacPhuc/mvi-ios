@@ -60,17 +60,43 @@ enum MyReducer {
 
 ## Effect handler (the only impure layer)
 
+If the project has a Domain/Data layer (see `swiftui-mvi-bootstrap`), the effect handler is a **struct** that depends on Domain protocols and is constructed by `AppContainer`:
+
+```swift
+struct MyEffectHandler {
+    let items: ItemRepository                  // Domain protocol — never the concrete Data impl
+
+    func handle(_ effect: MyEffect) async -> MyIntent? {
+        switch effect {
+        case .loadItems:
+            do {
+                let items = try await self.items.fetchItems()
+                return .loaded(items)
+            } catch let e as DomainError {
+                return .loadFailed(message(for: e))
+            } catch {
+                return .loadFailed("Something went wrong.")
+            }
+        }
+    }
+}
+```
+
+For early prototypes / projects without the Data layer, an `enum` with inline mock data is fine:
+
 ```swift
 enum MyEffectHandler {
     static func handle(_ effect: MyEffect) async -> MyIntent? {
         switch effect {
         case .loadItems:
             try? await Task.sleep(nanoseconds: 250_000_000)
-            return .loaded(MockData.items)   // emits a follow-up intent
+            return .loaded(MockData.items)
         }
     }
 }
 ```
+
+**When adding a feature that hits a backend or persistence**, prefer the struct + repository protocol pattern. Define the protocol in `Core/Domain/`, mock impl in `Core/Data/`, wire via `AppContainer`. Don't import concrete Data types from a feature.
 
 The Store auto-dispatches the returned intent back through the reducer. **For typewriter / polling / re-scheduling effects**, return the same effect from the reducer on each tick:
 
