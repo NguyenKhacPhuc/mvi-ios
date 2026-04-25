@@ -6,12 +6,21 @@ A small collection of [Claude Code](https://claude.com/claude-code) skills harve
 
 | Skill | Purpose |
 |---|---|
+| [`swiftui-mvi-bootstrap`](skills/swiftui-mvi-bootstrap/skill.md) | Bootstrap a brand-new SwiftUI iOS app from zero with MVI pre-wired. Gathers app name / bundle ID / team / min iOS / output path, then generates `project.yml` + `Core/MVI` + `Core/DesignSystem` + a starter Home feature + reducer test + `CLAUDE.md`. Uses xcodegen so the project is regenerable. |
 | [`figma-asset-pull`](skills/figma-asset-pull/skill.md) | Pull cover PNGs (1x/2x/3x) and tintable SVG icons from a Figma file into `Assets.xcassets` via the Figma REST API. Includes the chip-background regex for clean SVGs. |
 | [`figma-mvi-implementation`](skills/figma-mvi-implementation/skill.md) | End-to-end pipeline: Figma MCP context → token mapping → MVI scaffold → placeholder layout → asset pull → typecheck. Composes the three skills below. |
 | [`swiftui-mvi-feature`](skills/swiftui-mvi-feature/skill.md) | Scaffold a SwiftUI MVI feature folder (Intent / Model / State / View) with pure reducers, effect handlers, container views, typed `[Route]` navigation, and reducer tests. |
 | [`xcode-pbxproj-edit`](skills/xcode-pbxproj-edit/skill.md) | Programmatically add Swift files, nested groups, build settings, and scoped signing config to a non-synchronized `.pbxproj`. The four sections, stable-ID scheme, common build-setting recipes. |
 | [`ios-appicon-from-art`](skills/ios-appicon-from-art/skill.md) | Generate a complete `AppIcon.appiconset` with all 13 unique PNG sizes from a single source via `sips`, including alpha-stripping for the 1024 marketing icon. |
 | [`ios-archive-validation`](skills/ios-archive-validation/skill.md) | Recipe book for the 7 most common archive / App Store Connect submission errors with their exact build-setting fixes. Includes a pre-archive checklist. |
+
+## Suggested order for a new project
+
+1. `swiftui-mvi-bootstrap` — create the project skeleton from zero
+2. `figma-asset-pull` — drop in real artwork once Figma is ready
+3. `swiftui-mvi-feature` — add additional screens beyond the Home starter
+4. `ios-appicon-from-art` — generate the AppIcon set when you have a 1024 source
+5. `ios-archive-validation` — only when something fails on the way to the App Store
 
 ## How to install
 
