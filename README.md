@@ -6,7 +6,8 @@ A small collection of [Claude Code](https://claude.com/claude-code) skills harve
 
 | Skill | Purpose |
 |---|---|
-| [`swiftui-mvi-bootstrap`](skills/swiftui-mvi-bootstrap/skill.md) | Bootstrap a brand-new SwiftUI iOS app from zero with MVI pre-wired. Gathers app name / bundle ID / team / min iOS / output path, then generates `project.yml` + `Core/MVI` + `Core/DesignSystem` + a starter Home feature + reducer test + `CLAUDE.md`. Uses xcodegen so the project is regenerable. |
+| [`swiftui-mvi-bootstrap`](skills/swiftui-mvi-bootstrap/skill.md) | Bootstrap a brand-new SwiftUI iOS app from zero with MVI pre-wired. Gathers app name / bundle ID / team / min iOS / output path, then generates `project.yml` + `Core/MVI` + `Core/DesignSystem` + `Core/Domain` + `Core/Data` + `App/AppContainer` + a starter Home feature + reducer test + `CLAUDE.md`. Uses xcodegen so the project is regenerable. |
+| [`domain-data-layer`](skills/domain-data-layer/skill.md) | Add a new repository to an existing MVI app: Domain protocol + entity, Data mock (and optional URLSession/Firebase/etc. impl), `AppContainer` wiring, EffectHandler refactor from `enum` to `struct`, plus tests. Also handles introducing the layers into a project that doesn't have them yet. |
 | [`figma-asset-pull`](skills/figma-asset-pull/skill.md) | Pull cover PNGs (1x/2x/3x) and tintable SVG icons from a Figma file into `Assets.xcassets` via the Figma REST API. Includes the chip-background regex for clean SVGs. |
 | [`figma-mvi-implementation`](skills/figma-mvi-implementation/skill.md) | End-to-end pipeline: Figma MCP context → token mapping → MVI scaffold → placeholder layout → asset pull → typecheck. Composes the three skills below. |
 | [`swiftui-mvi-feature`](skills/swiftui-mvi-feature/skill.md) | Scaffold a SwiftUI MVI feature folder (Intent / Model / State / View) with pure reducers, effect handlers, container views, typed `[Route]` navigation, and reducer tests. |
