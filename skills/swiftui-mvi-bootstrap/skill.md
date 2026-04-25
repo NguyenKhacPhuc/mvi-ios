@@ -63,6 +63,8 @@ Throughout the templates below, replace these placeholders with the user's input
 
 ## Phase 4 — Directory layout
 
+The project follows a **four-layer architecture** modeled as folder boundaries. Layers depend strictly downward (Presentation → Domain ← Data; Domain depends on nothing).
+
 ```
 {{OUTPUT_DIR}}/
 ├── project.yml
@@ -71,18 +73,25 @@ Throughout the templates below, replace these placeholders with the user's input
 ├── .gitignore
 ├── {{APP_NAME}}/
 │   ├── App/
-│   │   └── {{APP_NAME}}App.swift
+│   │   ├── {{APP_NAME}}App.swift
+│   │   └── AppContainer.swift              ← composition root (Data DI)
 │   ├── Core/
-│   │   ├── DesignSystem/
+│   │   ├── DesignSystem/                   ← Presentation (visual tokens)
 │   │   │   ├── AppIcon.swift
 │   │   │   ├── Colors.swift
 │   │   │   ├── Spacing.swift
 │   │   │   └── Typography.swift
-│   │   └── MVI/
-│   │       ├── MVIProtocols.swift
-│   │       └── Store.swift
+│   │   ├── MVI/                            ← Presentation (architecture primitives)
+│   │   │   ├── MVIProtocols.swift
+│   │   │   └── Store.swift
+│   │   ├── Domain/                         ← Domain (pure Swift; no SwiftUI/network)
+│   │   │   ├── DomainError.swift
+│   │   │   ├── Greeting.swift              ← sample entity
+│   │   │   └── GreetingRepository.swift    ← repository protocol
+│   │   └── Data/                           ← Data (concrete repos, data sources)
+│   │       └── MockGreetingRepository.swift
 │   ├── Features/
-│   │   └── Home/
+│   │   └── Home/                           ← Presentation feature
 │   │       ├── Intent/HomeIntent.swift
 │   │       ├── Model/HomeEffectHandler.swift
 │   │       ├── State/HomeReducer.swift
@@ -92,8 +101,16 @@ Throughout the templates below, replace these placeholders with the user's input
 │       └── Assets.xcassets/
 │           └── Contents.json
 └── {{APP_NAME}}Tests/
-    └── HomeReducerTests.swift
+    ├── HomeReducerTests.swift
+    └── MockGreetingRepositoryTests.swift
 ```
+
+**Layer rules (enforce in code review):**
+- `Core/Domain/` imports only `Foundation`. No `SwiftUI`, no `URLSession`, no `CoreData`. Pure data + protocols.
+- `Core/Data/` may import `Foundation` + persistence/network frameworks. Implements protocols from `Core/Domain/`.
+- `Core/MVI/` and `Core/DesignSystem/` are Presentation primitives — feature views use them.
+- `Features/<X>/` is Presentation. Effect handlers depend on `Core/Domain/` repository **protocols** (never on concrete `Core/Data/` types).
+- `App/AppContainer.swift` is the only place where Domain protocols meet Data implementations — the composition root.
 
 `mkdir -p` everything, then write each file. Do NOT create `Assets.xcassets/AppIcon.appiconset/` here — leave it for the user to run `ios-appicon-from-art` once they have artwork.
 
@@ -294,16 +311,101 @@ import SwiftUI
 
 @main
 struct {{APP_NAME}}App: App {
+    private let container = AppContainer.live
+
     var body: some Scene {
         WindowGroup {
             HomeView(
                 store: Store(
                     initialState: HomeState(),
                     reducer: HomeReducer.reduce,
-                    effectHandler: HomeEffectHandler.handle
+                    effectHandler: container.homeEffectHandler.handle
                 )
             )
         }
+    }
+}
+```
+
+### `{{APP_NAME}}/App/AppContainer.swift`
+
+```swift
+import Foundation
+
+/// Composition root. Wires Domain protocols to Data implementations.
+/// Add new repositories here; features should never instantiate Data types directly.
+struct AppContainer {
+    let greetings: GreetingRepository
+
+    var homeEffectHandler: HomeEffectHandler {
+        HomeEffectHandler(greetings: greetings)
+    }
+
+    static let live = AppContainer(
+        greetings: MockGreetingRepository()   // swap for a real impl when ready
+    )
+}
+```
+
+### `{{APP_NAME}}/Core/Domain/DomainError.swift`
+
+```swift
+import Foundation
+
+/// Common error type bubbled from Data → Domain → Presentation.
+/// Don't leak concrete URLError / DecodingError up; map them here.
+public enum DomainError: Error, Equatable {
+    case offline
+    case unauthorized
+    case notFound
+    case server(message: String)
+    case unknown
+}
+```
+
+### `{{APP_NAME}}/Core/Domain/Greeting.swift`
+
+```swift
+import Foundation
+
+/// Sample domain entity. Replace with the real entities once the spec is known.
+public struct Greeting: Equatable, Hashable {
+    public let id: String
+    public let text: String
+
+    public init(id: String, text: String) {
+        self.id = id
+        self.text = text
+    }
+}
+```
+
+### `{{APP_NAME}}/Core/Domain/GreetingRepository.swift`
+
+```swift
+import Foundation
+
+/// Domain-side contract. Presentation depends on this; Data implements it.
+/// Methods throw `DomainError` — never leak transport errors past this boundary.
+public protocol GreetingRepository {
+    func fetchGreeting() async throws -> Greeting
+}
+```
+
+### `{{APP_NAME}}/Core/Data/MockGreetingRepository.swift`
+
+```swift
+import Foundation
+
+/// Default mock impl for development and previews. Replace with a real impl
+/// (URLSession, Firebase, GRDB, etc.) once a backend exists. Keep mocks here so
+/// SwiftUI previews and tests can use them without pulling network code.
+public struct MockGreetingRepository: GreetingRepository {
+    public init() {}
+
+    public func fetchGreeting() async throws -> Greeting {
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        return Greeting(id: "welcome", text: "Hello from {{APP_NAME}}!")
     }
 }
 ```
@@ -319,6 +421,8 @@ struct HomeState: MVIState, Equatable {
     var errorMessage: String? = nil
 }
 ```
+
+> The state holds plain values. Domain entities (`Greeting`) get unwrapped here into display strings — the view never imports Domain directly.
 
 ### `{{APP_NAME}}/Features/Home/Intent/HomeIntent.swift`
 
@@ -367,12 +471,32 @@ enum HomeReducer {
 ```swift
 import Foundation
 
-enum HomeEffectHandler {
-    static func handle(_ effect: HomeEffect) async -> HomeIntent? {
+/// Depends on a Domain protocol — never on Data types directly.
+/// Constructed by `AppContainer`, not the View.
+struct HomeEffectHandler {
+    let greetings: GreetingRepository
+
+    func handle(_ effect: HomeEffect) async -> HomeIntent? {
         switch effect {
         case .loadGreeting:
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            return .greetingLoaded("Hello from {{APP_NAME}}!")
+            do {
+                let greeting = try await greetings.fetchGreeting()
+                return .greetingLoaded(greeting.text)
+            } catch let error as DomainError {
+                return .loadFailed(message(for: error))
+            } catch {
+                return .loadFailed("Something went wrong.")
+            }
+        }
+    }
+
+    private func message(for error: DomainError) -> String {
+        switch error {
+        case .offline:        return "You appear to be offline."
+        case .unauthorized:   return "Please sign in again."
+        case .notFound:       return "Not found."
+        case .server(let m):  return m
+        case .unknown:        return "Something went wrong."
         }
     }
 }
@@ -410,11 +534,12 @@ struct HomeView: View {
 }
 
 #Preview {
+    let handler = HomeEffectHandler(greetings: MockGreetingRepository())
     HomeView(
         store: Store(
             initialState: HomeState(),
             reducer: HomeReducer.reduce,
-            effectHandler: HomeEffectHandler.handle
+            effectHandler: handler.handle
         )
     )
 }
@@ -462,6 +587,25 @@ final class HomeReducerTests: XCTestCase {
 }
 ```
 
+### `{{APP_NAME}}Tests/MockGreetingRepositoryTests.swift`
+
+```swift
+import XCTest
+@testable import {{APP_NAME}}
+
+final class MockGreetingRepositoryTests: XCTestCase {
+
+    func test_fetchGreeting_returnsExpectedSeed() async throws {
+        let repo = MockGreetingRepository()
+        let greeting = try await repo.fetchGreeting()
+        XCTAssertEqual(greeting.id, "welcome")
+        XCTAssertFalse(greeting.text.isEmpty)
+    }
+}
+```
+
+> Add a fake repo (`StubGreetingRepository`) for effect-handler tests that need to assert error mapping. Keep it in `<App>Tests/` — never in `Core/Data/`.
+
 ### `CLAUDE.md`
 
 ```markdown
@@ -469,19 +613,41 @@ final class HomeReducerTests: XCTestCase {
 
 ## Architecture
 
-This is a SwiftUI iOS app using **MVI** (Model–View–Intent). When generating or modifying feature code:
+This is a SwiftUI iOS app using **MVI** (Model–View–Intent) on top of a four-layer architecture: **Presentation → Domain ← Data**, wired together at the **App** composition root.
+
+### MVI primitives (Presentation)
 
 - **State** is a value type (`struct`), `Equatable`, and immutable from the view's perspective.
 - **Intent** is an `enum` of all actions the user/system can trigger.
 - **Effect** is an `enum` of async work the reducer can request.
 - **Reducer** is a pure static function `reduce(State, Intent) -> (State, Effect?)`. No I/O, no `Task`, no `Date.now()`, nothing impure.
-- **EffectHandler** is a static async function that runs the effect and returns an optional follow-up Intent.
+- **EffectHandler** is a struct that depends on Domain protocols (injected via `AppContainer`) and exposes an async `handle(_:)` returning an optional follow-up Intent.
 - Views observe `Store<State, Intent, Effect>` via `@ObservedObject` and dispatch through `store.send(_:)`.
 
-## Folder convention
+### Layer rules (strict)
+
+| Layer | Path | May import | Must NOT import |
+|---|---|---|---|
+| **Domain** | `Core/Domain/` | `Foundation` | SwiftUI, URLSession, CoreData, Firebase |
+| **Data** | `Core/Data/` | Domain, network/persistence frameworks | SwiftUI, feature views, MVI primitives |
+| **Presentation** (Core) | `Core/MVI/`, `Core/DesignSystem/` | SwiftUI | Data |
+| **Presentation** (feature) | `Features/<X>/` | Domain, MVI, DesignSystem | Data (concrete types) |
+| **App / Composition root** | `App/AppContainer.swift` | everything | — |
+
+The composition root in `App/AppContainer.swift` is the **only** place where Domain protocols meet Data implementations. Features see protocols only.
+
+### Adding a new repository
+
+1. Define the protocol + entities in `Core/Domain/`.
+2. Add a mock impl in `Core/Data/` (and a real impl when there's a backend).
+3. Wire it in `AppContainer.swift`.
+4. Inject into the feature's `EffectHandler` constructor.
+5. Test the reducer (pure) and the repository mock independently.
+
+## Feature folder convention
 
 One folder per feature under `{{APP_NAME}}/Features/<FeatureName>/`:
-- `Model/` — domain types, repositories, effect handlers
+- `Model/` — effect handlers (depends on Domain protocols)
 - `Intent/` — `Intent` and `Effect` enums
 - `State/` — `State` struct and pure `Reducer`
 - `View/` — SwiftUI views
@@ -500,7 +666,9 @@ Don't hand-edit the `.pbxproj` — edits will be lost on next regenerate.
 
 ## Tests
 
-Reducers are pure → **every reducer should have unit tests** in `{{APP_NAME}}Tests/`. See `HomeReducerTests.swift` for the pattern.
+- Reducers are pure → **every reducer must have unit tests**. See `HomeReducerTests.swift`.
+- Mock repositories should also have tests pinning their seed data.
+- Effect handlers can be tested by injecting a `Stub<Name>Repository` defined in the test target.
 ```
 
 ### `README.md`
@@ -518,11 +686,13 @@ SwiftUI iOS app built on the MVI (Model-View-Intent) pattern.
 
 ## Architecture
 
-See [`CLAUDE.md`](CLAUDE.md) for the full conventions. Quick tour:
+Four layers wired by composition. See [`CLAUDE.md`](CLAUDE.md) for the strict rules.
 
-- `Core/MVI/` — the generic `Store<State, Intent, Effect>`.
-- `Core/DesignSystem/` — `AppColor`, `AppFont`, `AppSpacing` tokens. All visual constants live here.
+- `Core/Domain/` — pure Swift entities and repository protocols. No SwiftUI / URLSession / CoreData.
+- `Core/Data/` — concrete repository implementations (mock now, real later).
+- `Core/MVI/` + `Core/DesignSystem/` — Presentation primitives (Store, tokens).
 - `Features/<Name>/{Intent,Model,State,View}/` — one folder per feature, MVI parts kept separate.
+- `App/AppContainer.swift` — composition root: the only place Domain protocols meet Data impls.
 
 ## Tests
 
